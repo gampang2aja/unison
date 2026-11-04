@@ -138,14 +138,18 @@ export default function SettingsPage() {
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
             <div className="p-3 rounded-xl border border-zinc-800 bg-zinc-950/30">
               <div className="font-medium text-zinc-300">Drift Tolerance</div>
-              <div className="text-zinc-500 mt-1">300 ms (suppresses micro-seeking)</div>
+              <div className="text-zinc-500 mt-1">100 ms (tight sync target)</div>
             </div>
             <div className="p-3 rounded-xl border border-zinc-800 bg-zinc-950/30">
               <div className="font-medium text-zinc-300">Correction Threshold</div>
-              <div className="text-zinc-500 mt-1">1500 ms (triggers position seek)</div>
+              <div className="text-zinc-500 mt-1">250 ms (triggers corrective seek)</div>
+            </div>
+            <div className="p-3 rounded-xl border border-zinc-800 bg-zinc-950/30">
+              <div className="font-medium text-zinc-300">Predictive Lead</div>
+              <div className="text-zinc-500 mt-1">+450 ms (transit latency compensation)</div>
             </div>
           </div>
 

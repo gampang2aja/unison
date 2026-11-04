@@ -90,8 +90,36 @@ export class ListenerSyncEngine {
       return;
     }
 
-    const targetPos = calculateTargetPosition(event, { clock: this.clock });
+    const predictiveAdvance = this.settings.predictiveAdvanceMs ?? 450;
+    const targetPos = calculateTargetPosition(event, {
+      clock: this.clock,
+      transitLatencyMs: predictiveAdvance,
+    });
     this.commandQueue.enqueue(event, "CHANGE_TRACK", targetPos);
+  }
+
+  /**
+   * Manually trigger an immediate predictive resync to snap to the Host's position.
+   */
+  public async forceResync(): Promise<void> {
+    if (!this.latestEvent || !this.latestEvent.isPlaying) return;
+    const predictiveAdvance = this.settings.predictiveAdvanceMs ?? 450;
+    const targetPos = calculateTargetPosition(this.latestEvent, {
+      clock: this.clock,
+      transitLatencyMs: predictiveAdvance,
+    });
+    this.setStatus("syncing");
+    this.commandQueue.enqueue(
+      {
+        ...this.latestEvent,
+        sequenceNumber: this.commandQueue.getLastSequence() + 1,
+      },
+      "SEEK",
+      targetPos
+    );
+    setTimeout(() => {
+      this.checkAndCorrectDrift();
+    }, 1500);
   }
 
   /**
@@ -121,13 +149,18 @@ export class ListenerSyncEngine {
 
       if (evaluation.action !== "NONE") {
         this.setStatus("drift_detected", evaluation);
+        const predictiveAdvance = this.settings.predictiveAdvanceMs ?? 450;
+        const targetWithAdvance = evaluation.action === "SEEK"
+          ? evaluation.targetPositionMs + predictiveAdvance
+          : evaluation.targetPositionMs;
+
         this.commandQueue.enqueue(
           {
             ...this.latestEvent,
             sequenceNumber: this.commandQueue.getLastSequence() + 1,
           },
           evaluation.action,
-          evaluation.targetPositionMs
+          targetWithAdvance
         );
       } else {
         this.setStatus(this.latestEvent.isPlaying ? "in_sync" : "paused", evaluation);

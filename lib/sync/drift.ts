@@ -1,10 +1,11 @@
 import { SyncEvaluation, RoomSettings } from "@/types";
 
 export const DEFAULT_SYNC_SETTINGS: RoomSettings = {
-  driftToleranceMs: 300,
-  correctionThresholdMs: 1500,
-  hostPollIntervalMs: 3000,
-  listenerSyncIntervalMs: 4000,
+  driftToleranceMs: 100, // target tight sync tolerance <= 100ms
+  correctionThresholdMs: 250, // triggers corrective seek when drift exceeds 250ms
+  hostPollIntervalMs: 2000,
+  listenerSyncIntervalMs: 3000,
+  predictiveAdvanceMs: 450, // predictive advance offset to compensate for network + Spotify API transit
 };
 
 export interface LocalPlaybackStatus {

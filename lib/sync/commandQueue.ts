@@ -84,8 +84,8 @@ export class PlaybackCommandQueue {
     if (cmd.action !== prev.action) return false;
     if (cmd.trackUri !== prev.trackUri) return false;
 
-    // For seek or play, if position is within 250ms and occurred within 1 second, consider duplicate
-    if (Math.abs(cmd.targetPositionMs - prev.targetPositionMs) < 250) {
+    // For seek or play, if position is within 200ms and occurred within 1.5 seconds, consider duplicate
+    if (cmd.timestamp - prev.timestamp < 1500 && Math.abs(cmd.targetPositionMs - prev.targetPositionMs) < 200) {
       return true;
     }
 

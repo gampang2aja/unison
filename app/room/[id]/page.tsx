@@ -14,6 +14,7 @@ import {
   LogOut,
   AlertTriangle,
   Crown,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -22,7 +23,8 @@ import { ProgressBar } from "@/components/player/progress-bar";
 import { DeviceSelector } from "@/components/player/device-selector";
 import { MemberList } from "@/components/room/member-list";
 import { SyncStatusBadge } from "@/components/room/sync-status-badge";
-import { Room, RoomMember, RoomPlaybackState, SpotifyDevice, SyncStatus } from "@/types";
+import { Room, RoomMember, RoomPlaybackState, RoomSettings, SpotifyDevice, SyncStatus } from "@/types";
+import { cn } from "@/lib/utils";
 import { ListenerSyncEngine } from "@/lib/sync/listenerSync";
 import { HostPlaybackMonitor } from "@/lib/sync/hostMonitor";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -44,6 +46,7 @@ function ListeningRoomContent() {
   const [driftMs, setDriftMs] = useState<number>(0);
   const [copied, setCopied] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isManualSyncing, setIsManualSyncing] = useState(false);
   const [isHostOnline, setIsHostOnline] = useState(true);
   const [loading, setLoading] = useState(true);
 
@@ -383,6 +386,15 @@ function ListeningRoomContent() {
   useEffect(() => {
     if (isHost || !room) return;
 
+    const roomSettings: RoomSettings = {
+      ...(room.settings || {}),
+      driftToleranceMs: 100,
+      correctionThresholdMs: 250,
+      hostPollIntervalMs: 2000,
+      listenerSyncIntervalMs: 3000,
+      predictiveAdvanceMs: 450,
+    };
+
     const engine = new ListenerSyncEngine(
       {
         onSyncStatusChange: (status, evaluation) => {
@@ -411,14 +423,20 @@ function ListeningRoomContent() {
         },
         getLocalPlaybackStatus: async () => {
           try {
+            const reqStart = Date.now();
             const res = await fetch("/api/spotify/current");
             if (res.ok) {
               const data = await res.json();
               if (data && data.item) {
+                // Compensate for elapsed time since Spotify generated this snapshot
+                const sampleTime = data.timestamp || reqStart;
+                const elapsedSinceSample = data.isPlaying
+                  ? Math.max(0, Date.now() - sampleTime)
+                  : 0;
                 return {
                   trackUri: data.item.uri || null,
                   isPlaying: Boolean(data.isPlaying),
-                  positionMs: data.progressMs || 0,
+                  positionMs: (data.progressMs || 0) + elapsedSinceSample,
                 };
               }
             }
@@ -435,7 +453,7 @@ function ListeningRoomContent() {
           setErrorMessage(err.message);
         },
       },
-      room.settings
+      roomSettings
     );
 
     listenerEngineRef.current = engine;
@@ -510,6 +528,19 @@ function ListeningRoomContent() {
       await fetch(`/api/rooms/${room.id}/leave`, { method: "POST" });
     }
     router.push("/dashboard");
+  };
+
+  const handleManualResync = async () => {
+    if (isHost || !listenerEngineRef.current || isManualSyncing) return;
+    setIsManualSyncing(true);
+    setErrorMessage(null);
+    try {
+      await listenerEngineRef.current.forceResync();
+    } catch (err: unknown) {
+      setErrorMessage((err as Error).message || "Resync failed");
+    } finally {
+      setTimeout(() => setIsManualSyncing(false), 1500);
+    }
   };
 
   if (loading) {
@@ -625,7 +656,20 @@ function ListeningRoomContent() {
                 <Crown className="w-3 h-3 text-amber-300 mr-1" /> Host Broadcasting
               </Badge>
             ) : (
-              <SyncStatusBadge status={syncStatus} driftMs={driftMs} />
+              <div className="flex items-center gap-2">
+                <SyncStatusBadge status={syncStatus} driftMs={driftMs} />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleManualResync}
+                  disabled={isManualSyncing}
+                  className="h-6 px-2 text-[11px] gap-1 rounded-full border-violet-500/30 text-violet-300 hover:bg-violet-500/10 hover:text-white"
+                  title="Resync immediately with Host (predictive lead applied)"
+                >
+                  <RefreshCw className={cn("w-3 h-3", isManualSyncing && "animate-spin")} />
+                  <span>{isManualSyncing ? "Syncing..." : "Resync"}</span>
+                </Button>
+              </div>
             )}
 
             <DeviceSelector
@@ -717,11 +761,15 @@ function ListeningRoomContent() {
             <div className="space-y-2 text-zinc-400 font-mono text-[11px]">
               <div className="flex justify-between">
                 <span>Tolerance:</span>
-                <span className="text-zinc-200">±300 ms</span>
+                <span className="text-zinc-200">±100 ms</span>
               </div>
               <div className="flex justify-between">
                 <span>Correction Threshold:</span>
-                <span className="text-zinc-200">1500 ms</span>
+                <span className="text-zinc-200">250 ms</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Predictive Advance:</span>
+                <span className="text-emerald-400">+450 ms</span>
               </div>
               <div className="flex justify-between">
                 <span>Sequence Number:</span>

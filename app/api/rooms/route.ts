@@ -64,10 +64,11 @@ export async function POST(request: NextRequest) {
     host_user_id: session.userId,
     status: "active",
     settings: {
-      driftToleranceMs: 300,
-      correctionThresholdMs: 1500,
+      driftToleranceMs: 100,
+      correctionThresholdMs: 250,
       hostPollIntervalMs: 2000,
       listenerSyncIntervalMs: 3000,
+      predictiveAdvanceMs: 450,
     },
     created_at: now,
     updated_at: now,

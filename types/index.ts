@@ -30,6 +30,7 @@ export interface RoomSettings {
   correctionThresholdMs: number;
   hostPollIntervalMs: number;
   listenerSyncIntervalMs: number;
+  predictiveAdvanceMs?: number;
 }
 
 export interface Room {
