@@ -69,6 +69,8 @@ export interface RoomPlaybackState {
   artist_name: string | null;
   album_name: string | null;
   album_art_url: string | null;
+  album_uri?: string | null;
+  context_uri?: string | null;
   duration_ms: number;
   is_playing: boolean;
   position_ms: number;
@@ -88,6 +90,8 @@ export interface PlaybackBroadcastEvent {
   artistName: string | null;
   albumName: string | null;
   albumArtUrl: string | null;
+  albumUri?: string | null;
+  contextUri?: string | null;
   durationMs: number;
   isPlaying: boolean;
   positionMs: number;

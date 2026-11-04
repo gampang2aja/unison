@@ -17,6 +17,8 @@ export interface SpotifyPlayerSnapshot {
     artistName: string;
     albumName: string;
     albumArtUrl: string | null;
+    albumUri?: string | null;
+    contextUri?: string | null;
   } | null;
   deviceId?: string | null;
   timestamp: number;
@@ -119,6 +121,8 @@ export class HostPlaybackMonitor {
           artistName: current.item?.artistName ?? null,
           albumName: current.item?.albumName ?? null,
           albumArtUrl: current.item?.albumArtUrl ?? null,
+          albumUri: current.item?.albumUri ?? null,
+          contextUri: current.item?.contextUri ?? null,
           durationMs: current.item?.durationMs ?? 0,
           isPlaying: current.isPlaying,
           positionMs: current.progressMs,

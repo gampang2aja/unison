@@ -84,6 +84,8 @@ export async function POST(
     artist_name: raw.artist_name !== undefined ? raw.artist_name : (raw.artistName ?? null),
     album_name: raw.album_name !== undefined ? raw.album_name : (raw.albumName ?? null),
     album_art_url: raw.album_art_url !== undefined ? raw.album_art_url : (raw.albumArtUrl ?? null),
+    album_uri: raw.album_uri !== undefined ? raw.album_uri : (raw.albumUri ?? null),
+    context_uri: raw.context_uri !== undefined ? raw.context_uri : (raw.contextUri ?? null),
     duration_ms: raw.duration_ms !== undefined ? raw.duration_ms : (raw.durationMs ?? 0),
     is_playing: raw.is_playing !== undefined ? raw.is_playing : (raw.isPlaying ?? false),
     position_ms: raw.position_ms !== undefined ? raw.position_ms : (raw.positionMs ?? 0),

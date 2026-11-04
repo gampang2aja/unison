@@ -171,6 +171,8 @@ function ListeningRoomContent() {
                   artist_name: curr.item.artistName,
                   album_name: curr.item.albumName,
                   album_art_url: curr.item.albumArtUrl,
+                  album_uri: curr.item.albumUri || null,
+                  context_uri: curr.item.contextUri || null,
                   duration_ms: curr.item.durationMs,
                   is_playing: curr.isPlaying,
                   position_ms: curr.progressMs,
@@ -211,6 +213,15 @@ function ListeningRoomContent() {
           if (isMounted) {
             setMembers(details.members || []);
             setCurrentUserId(details.currentUserId);
+            if (details.playbackState) {
+              setPlaybackState(details.playbackState);
+              if (details.playbackState.sequence_number) {
+                currentSequenceRef.current = Math.max(
+                  currentSequenceRef.current,
+                  details.playbackState.sequence_number
+                );
+              }
+            }
           }
         }
       } catch (err: unknown) {
@@ -245,6 +256,8 @@ function ListeningRoomContent() {
           artist_name: event.artistName,
           album_name: event.albumName,
           album_art_url: event.albumArtUrl,
+          album_uri: event.albumUri || null,
+          context_uri: event.contextUri || null,
           duration_ms: event.durationMs,
           is_playing: event.isPlaying,
           position_ms: event.positionMs,
@@ -306,6 +319,8 @@ function ListeningRoomContent() {
             artist_name: event.artistName,
             album_name: event.albumName,
             album_art_url: event.albumArtUrl,
+            album_uri: event.albumUri || null,
+            context_uri: event.contextUri || null,
             duration_ms: event.durationMs,
             is_playing: event.isPlaying,
             position_ms: event.positionMs,
@@ -385,6 +400,8 @@ function ListeningRoomContent() {
               trackUri: cmd.trackUri,
               positionMs: cmd.targetPositionMs,
               deviceId: selectedDevice?.id,
+              contextUri: cmd.contextUri || playbackStateRef.current?.context_uri || null,
+              albumUri: cmd.albumUri || playbackStateRef.current?.album_uri || null,
             }),
           });
           if (!res.ok) {
@@ -436,6 +453,8 @@ function ListeningRoomContent() {
         artistName: currentPb.artist_name,
         albumName: currentPb.album_name,
         albumArtUrl: currentPb.album_art_url,
+        albumUri: currentPb.album_uri || null,
+        contextUri: currentPb.context_uri || null,
         durationMs: currentPb.duration_ms,
         isPlaying: currentPb.is_playing,
         positionMs: currentPb.position_ms,

@@ -5,6 +5,8 @@ export interface QueuedCommand {
   action: SyncActionType;
   trackUri: string | null;
   targetPositionMs: number;
+  contextUri?: string | null;
+  albumUri?: string | null;
   timestamp: number;
 }
 
@@ -56,6 +58,8 @@ export class PlaybackCommandQueue {
       sequenceNumber: event.sequenceNumber,
       action,
       trackUri: event.trackUri,
+      contextUri: event.contextUri,
+      albumUri: event.albumUri,
       targetPositionMs,
       timestamp: Date.now(),
     };

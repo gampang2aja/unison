@@ -6,6 +6,7 @@ import {
   pauseSpotifyPlayback,
   seekSpotifyPlayback,
   getSpotifyDevices,
+  getSpotifyTrack,
   SpotifyPremiumRequiredError,
   SpotifyNoActiveDeviceError,
   SpotifyApiError,
@@ -17,7 +18,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { action, trackUri, positionMs, deviceId } = await request.json();
+  const { action, trackUri, positionMs, deviceId, contextUri, albumUri } = await request.json();
 
   if (session.userId.startsWith("00000000")) {
     return NextResponse.json({ error: "Demo accounts not allowed in production. Please log in with Spotify." }, { status: 403 });
@@ -43,13 +44,33 @@ export async function POST(request: NextRequest) {
     }
 
     switch (action) {
-      case "CHANGE_TRACK":
-        await startOrResumeSpotifyPlayback(accessToken, {
-          deviceId: targetDeviceId,
-          uris: trackUri ? [trackUri] : undefined,
-          positionMs: positionMs ?? 0,
-        });
+      case "CHANGE_TRACK": {
+        let targetContext = contextUri || albumUri;
+        // If contextUri is missing, look up the track's album URI from Spotify catalog so desktop client plays reliably
+        if (!targetContext && trackUri && trackUri.startsWith("spotify:track:")) {
+          const trackId = trackUri.replace("spotify:track:", "");
+          const trk = await getSpotifyTrack(accessToken, trackId);
+          if (trk?.album?.uri) {
+            targetContext = trk.album.uri;
+          }
+        }
+
+        if (targetContext && trackUri) {
+          await startOrResumeSpotifyPlayback(accessToken, {
+            deviceId: targetDeviceId,
+            contextUri: targetContext,
+            offset: { uri: trackUri },
+            positionMs: positionMs ?? 0,
+          });
+        } else {
+          await startOrResumeSpotifyPlayback(accessToken, {
+            deviceId: targetDeviceId,
+            uris: trackUri ? [trackUri] : undefined,
+            positionMs: positionMs ?? 0,
+          });
+        }
         break;
+      }
 
       case "PLAY":
         await startOrResumeSpotifyPlayback(accessToken, {

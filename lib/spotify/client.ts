@@ -152,6 +152,11 @@ export interface SpotifyPlaybackStateResponse {
   device?: SpotifyDevice;
   repeat_state?: string;
   shuffle_state?: boolean;
+  context?: {
+    type?: string;
+    href?: string;
+    uri: string;
+  } | null;
   timestamp?: number;
   progress_ms?: number;
   is_playing: boolean;
@@ -162,6 +167,7 @@ export interface SpotifyPlaybackStateResponse {
     duration_ms: number;
     artists: Array<{ name: string; id: string; uri: string }>;
     album: {
+      uri?: string;
       name: string;
       images: Array<{ url: string; height?: number; width?: number }>;
     };
@@ -234,15 +240,23 @@ export async function startOrResumeSpotifyPlayback(
   options?: {
     deviceId?: string;
     uris?: string[];
+    contextUri?: string;
+    offset?: { uri?: string; position?: number };
     positionMs?: number;
   }
 ): Promise<void> {
   const query = options?.deviceId ? `?device_id=${encodeURIComponent(options.deviceId)}` : "";
   const body: Record<string, unknown> = {};
 
-  if (options?.uris && options.uris.length > 0) {
+  if (options?.contextUri) {
+    body.context_uri = options.contextUri;
+    if (options.offset) {
+      body.offset = options.offset;
+    }
+  } else if (options?.uris && options.uris.length > 0) {
     body.uris = options.uris;
   }
+
   if (options?.positionMs !== undefined && options.positionMs >= 0) {
     body.position_ms = Math.floor(options.positionMs);
   }
@@ -303,5 +317,23 @@ export async function skipSpotifyPrevious(accessToken: string, deviceId?: string
   await spotifyFetch<void>(`/me/player/previous${query}`, accessToken, {
     method: "POST",
   });
+}
+
+/**
+ * GET /tracks/{id}
+ * Get Spotify catalog information for a single track.
+ */
+export async function getSpotifyTrack(
+  accessToken: string,
+  trackId: string
+): Promise<{ album?: { uri?: string } } | null> {
+  try {
+    return await spotifyFetch<{ album?: { uri?: string } }>(
+      `/tracks/${encodeURIComponent(trackId)}`,
+      accessToken
+    );
+  } catch {
+    return null;
+  }
 }
 

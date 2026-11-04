@@ -28,6 +28,8 @@ export async function GET() {
       playback.item.album?.images && playback.item.album.images.length > 0
         ? playback.item.album.images[0].url
         : null;
+    const albumUri = playback.item.album?.uri || null;
+    const contextUri = playback.context?.uri || albumUri || null;
 
     return NextResponse.json({
       isPlaying: playback.is_playing,
@@ -41,6 +43,8 @@ export async function GET() {
         artistName,
         albumName: playback.item.album?.name || "Unknown Album",
         albumArtUrl,
+        albumUri,
+        contextUri,
       },
       device: playback.device || null,
     });
