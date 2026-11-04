@@ -6,6 +6,7 @@ export interface RoomConnectionCallbacks {
   onPresenceSync: (members: Record<string, unknown>[]) => void;
   onConnectionStatusChange: (status: "connected" | "disconnected" | "reconnecting") => void;
   onHostStatusChange: (isHostOnline: boolean) => void;
+  onMembersChange?: () => void;
   onError?: (error: Error) => void;
 }
 
@@ -53,6 +54,29 @@ export class RoomRealtimeManager {
       }
     );
 
+    // Listen to broadcast members updates (e.g. joins, leaves, device changes)
+    this.channel.on(
+      "broadcast",
+      { event: "members_update" },
+      () => {
+        this.callbacks.onMembersChange?.();
+      }
+    );
+
+    // Track postgres_changes for room_members table in Supabase
+    this.channel.on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "room_members",
+        filter: `room_id=eq.${this.roomId}`,
+      },
+      () => {
+        this.callbacks.onMembersChange?.();
+      }
+    );
+
     // Track room presence (members in room)
     this.channel.on("presence", { event: "sync" }, () => {
       if (!this.channel) return;
@@ -63,12 +87,20 @@ export class RoomRealtimeManager {
       // Check if host is present in the presence list
       const hasHost = members.some((m) => m.role === "host");
       this.callbacks.onHostStatusChange(hasHost);
+      this.callbacks.onMembersChange?.();
     });
 
     this.channel.subscribe(async (status) => {
       if (status === "SUBSCRIBED") {
         this.reconnectAttempts = 0;
         this.callbacks.onConnectionStatusChange("connected");
+        // Track presence automatically
+        await this.trackPresence({
+          user_id: this.currentUserId,
+          online_at: Date.now(),
+        }).catch(() => {});
+        // Notify others
+        await this.broadcastMembersUpdate().catch(() => {});
       } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
         this.callbacks.onConnectionStatusChange("disconnected");
         this.handleReconnect();
@@ -88,6 +120,16 @@ export class RoomRealtimeManager {
         type: "broadcast",
         event: "playback_update",
         payload: event,
+      });
+    }
+  }
+
+  public async broadcastMembersUpdate(): Promise<void> {
+    if (this.channel) {
+      await this.channel.send({
+        type: "broadcast",
+        event: "members_update",
+        payload: { timestamp: Date.now() },
       });
     }
   }

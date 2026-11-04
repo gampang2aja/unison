@@ -49,11 +49,14 @@ export async function POST(
 
   if (isSupabaseConfigured()) {
     const supabase = getSupabaseAdmin();
-    const { data: dbRoom } = await supabase
-      .from("rooms")
-      .select("*")
-      .eq("id", id)
-      .maybeSingle();
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    let query = supabase.from("rooms").select("*");
+    if (isUuid) {
+      query = query.eq("id", id);
+    } else {
+      query = query.eq("room_code", id.toUpperCase());
+    }
+    const { data: dbRoom } = await query.maybeSingle();
     if (dbRoom) room = dbRoom;
   }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, Suspense } from "react";
+import React, { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -69,6 +69,59 @@ function ListeningRoomContent() {
     }
   };
 
+  // Refresh members list from server
+  const refreshMembers = useCallback(async () => {
+    if (!room) return;
+    try {
+      const res = await fetch(`/api/rooms/${room.id}`);
+      if (res.ok) {
+        const details = await res.json();
+        if (details.members) setMembers(details.members);
+      }
+    } catch {}
+  }, [room]);
+
+  // Handle active Spotify device selection and persist to room_members
+  const handleDeviceSelect = useCallback(async (device: SpotifyDevice) => {
+    setSelectedDevice(device);
+
+    // Optimistically update device_name in members list
+    setMembers((prev) =>
+      prev.map((m) =>
+        m.user_id === currentUserId
+          ? { ...m, device_id: device.id, device_name: device.name }
+          : m
+      )
+    );
+
+    if (room) {
+      try {
+        await fetch(`/api/rooms/${room.id}/device`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            deviceId: device.id,
+            deviceName: device.name,
+          }),
+        });
+
+        // Broadcast device update to other participants in the room
+        if (realtimeManagerRef.current) {
+          await realtimeManagerRef.current.trackPresence({
+            user_id: currentUserId,
+            role: isHost ? "host" : "listener",
+            device_id: device.id,
+            device_name: device.name,
+            updated_at: Date.now(),
+          });
+          await realtimeManagerRef.current.broadcastMembersUpdate();
+        }
+      } catch (err) {
+        console.warn("[Room] Error syncing device to room:", err);
+      }
+    }
+  }, [room, currentUserId, isHost]);
+
   // 1. Initial Room Join and Setup
   useEffect(() => {
     let isMounted = true;
@@ -103,7 +156,7 @@ function ListeningRoomContent() {
           }
         }
 
-        // If current user is host and no track is active yet, auto-sync from live Spotify immediately
+        // If current user is host, auto-sync track & device from live Spotify immediately
         if (data.isHost) {
           fetch("/api/spotify/current")
             .then((r) => r.json())
@@ -126,6 +179,26 @@ function ListeningRoomContent() {
                   synced_at: new Date().toISOString(),
                   host_device_id: curr.device?.id || null,
                 }));
+
+                // Auto-sync host device
+                if (curr.device) {
+                  setSelectedDevice(curr.device);
+                  fetch(`/api/rooms/${data.room.id}/device`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      deviceId: curr.device.id,
+                      deviceName: curr.device.name,
+                    }),
+                  }).catch(() => {});
+                  setMembers((prev) =>
+                    prev.map((m) =>
+                      m.user_id === data.room.host_user_id
+                        ? { ...m, device_id: curr.device.id, device_name: curr.device.name }
+                        : m
+                    )
+                  );
+                }
               }
             })
             .catch(() => {});
@@ -186,14 +259,11 @@ function ListeningRoomContent() {
           listenerEngineRef.current.handleBroadcastEvent(event);
         }
       },
+      onMembersChange: () => {
+        refreshMembers();
+      },
       onPresenceSync: () => {
-        // Refresh members
-        fetch(`/api/rooms/${room.id}`)
-          .then((r) => r.json())
-          .then((d) => {
-            if (d.members) setMembers(d.members);
-          })
-          .catch(() => {});
+        refreshMembers();
       },
       onConnectionStatusChange: (status) => {
         if (status === "reconnecting") setSyncStatus("reconnecting");
@@ -206,10 +276,16 @@ function ListeningRoomContent() {
     realtimeManagerRef.current = manager;
     manager.subscribe();
 
+    // Polling fallback to guarantee fresh member list across any network conditions
+    const memberPollInterval = setInterval(() => {
+      refreshMembers();
+    }, 4000);
+
     return () => {
+      clearInterval(memberPollInterval);
       manager.unsubscribe();
     };
-  }, [room, currentUserId, isHost]);
+  }, [room, currentUserId, isHost, refreshMembers]);
 
   // 3. Host Playback Monitoring Engine (Only when current user is Host)
   useEffect(() => {
@@ -301,7 +377,7 @@ function ListeningRoomContent() {
           }
         },
         executePlaybackCommand: async (cmd) => {
-          await fetch("/api/spotify/sync", {
+          const res = await fetch("/api/spotify/sync", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -311,13 +387,31 @@ function ListeningRoomContent() {
               deviceId: selectedDevice?.id,
             }),
           });
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.error || "Sync playback command failed");
+          }
         },
         getLocalPlaybackStatus: async () => {
-          const current = playbackStateRef.current;
+          try {
+            const res = await fetch("/api/spotify/current");
+            if (res.ok) {
+              const data = await res.json();
+              if (data && data.item) {
+                return {
+                  trackUri: data.item.uri || null,
+                  isPlaying: Boolean(data.isPlaying),
+                  positionMs: data.progressMs || 0,
+                };
+              }
+            }
+          } catch (e) {
+            console.warn("[ListenerSync] Error querying current playback:", e);
+          }
           return {
-            trackUri: current?.track_uri || null,
-            isPlaying: current?.is_playing || false,
-            positionMs: current?.position_ms || 0,
+            trackUri: null,
+            isPlaying: false,
+            positionMs: 0,
           };
         },
         onError: (err) => {
@@ -329,6 +423,26 @@ function ListeningRoomContent() {
 
     listenerEngineRef.current = engine;
     engine.start();
+
+    // If room already has playback state, seed listener engine immediately upon joining!
+    const currentPb = playbackStateRef.current;
+    if (currentPb && currentPb.track_uri) {
+      engine.handleBroadcastEvent({
+        type: "playback_update",
+        roomId: room.id,
+        trackUri: currentPb.track_uri,
+        trackId: currentPb.track_id,
+        trackName: currentPb.track_name,
+        artistName: currentPb.artist_name,
+        albumName: currentPb.album_name,
+        albumArtUrl: currentPb.album_art_url,
+        durationMs: currentPb.duration_ms,
+        isPlaying: currentPb.is_playing,
+        positionMs: currentPb.position_ms,
+        sequenceNumber: currentPb.sequence_number,
+        serverTimestamp: currentPb.server_timestamp,
+      });
+    }
 
     return () => {
       engine.stop();
@@ -497,7 +611,7 @@ function ListeningRoomContent() {
 
             <DeviceSelector
               selectedDeviceId={selectedDevice?.id || null}
-              onDeviceSelect={(d) => setSelectedDevice(d)}
+              onDeviceSelect={handleDeviceSelect}
             />
           </div>
 

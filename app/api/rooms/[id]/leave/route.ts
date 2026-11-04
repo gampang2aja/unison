@@ -14,18 +14,28 @@ export async function POST(
 
   const { id } = await params;
   const room = globalRoomStore.getRoom(id);
-  const roomId = room?.id || id;
-
-  globalRoomStore.removeMember(roomId, session.userId);
+  let roomId = room?.id || id;
 
   if (isSupabaseConfigured()) {
     const supabase = getSupabaseAdmin();
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    let query = supabase.from("rooms").select("id");
+    if (isUuid) {
+      query = query.eq("id", id);
+    } else {
+      query = query.eq("room_code", id.toUpperCase());
+    }
+    const { data: dbRoom } = await query.maybeSingle();
+    if (dbRoom) roomId = dbRoom.id;
+
     await supabase
       .from("room_members")
       .delete()
       .eq("room_id", roomId)
       .eq("user_id", session.userId);
   }
+
+  globalRoomStore.removeMember(roomId, session.userId);
 
   return NextResponse.json({ success: true, message: "Left room successfully" });
 }

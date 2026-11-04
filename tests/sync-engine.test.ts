@@ -3,6 +3,7 @@ import { ClockSync } from "@/lib/sync/clock";
 import { calculateTargetPosition } from "@/lib/sync/position";
 import { evaluateDrift } from "@/lib/sync/drift";
 import { PlaybackCommandQueue } from "@/lib/sync/commandQueue";
+import { ListenerSyncEngine } from "@/lib/sync/listenerSync";
 import { PlaybackBroadcastEvent } from "@/types";
 
 describe("Synchronization Engine — Clock & Position", () => {
@@ -219,5 +220,77 @@ describe("Synchronization Engine — Command Queue & Ordering", () => {
     const accepted = queue.enqueue(newEvent, "SEEK", 2000);
     expect(accepted).toBe(true);
     expect(queue.getLastSequence()).toBe(6);
+  });
+});
+
+describe("Synchronization Engine — ListenerSyncEngine End-to-End Simulation", () => {
+  it("should trigger playback command when listener local state is silent/different", async () => {
+    const executedCommands: unknown[] = [];
+    let localStatus = {
+      trackUri: null as string | null,
+      isPlaying: false,
+      positionMs: 0,
+    };
+
+    const engine = new ListenerSyncEngine(
+      {
+        onSyncStatusChange: vi.fn(),
+        executePlaybackCommand: async (cmd) => {
+          executedCommands.push(cmd);
+          // Simulate local Spotify starting playback after receiving command
+          localStatus = {
+            trackUri: cmd.trackUri,
+            isPlaying: true,
+            positionMs: cmd.targetPositionMs,
+          };
+        },
+        getLocalPlaybackStatus: async () => localStatus,
+      },
+      {
+        driftToleranceMs: 300,
+        correctionThresholdMs: 1500,
+        listenerSyncIntervalMs: 5000,
+      }
+    );
+
+    const now = Date.now();
+    const hostEvent: PlaybackBroadcastEvent = {
+      type: "playback_update",
+      roomId: "room-abc",
+      sequenceNumber: 1,
+      trackUri: "spotify:track:daft-punk-one-more-time",
+      trackId: "track-123",
+      trackName: "One More Time",
+      artistName: "Daft Punk",
+      albumName: "Discovery",
+      albumArtUrl: null,
+      durationMs: 320000,
+      isPlaying: true,
+      positionMs: 45000,
+      serverTimestamp: now,
+    };
+
+    // 1. Initial event arrives (e.g. Host is broadcasting or seeded on room join)
+    engine.handleBroadcastEvent(hostEvent);
+
+    // Give microtask queue time to process commandQueue
+    await new Promise((r) => setTimeout(r, 600));
+
+    expect(executedCommands.length).toBeGreaterThanOrEqual(1);
+    expect(executedCommands[0]).toMatchObject({
+      action: "CHANGE_TRACK",
+      trackUri: "spotify:track:daft-punk-one-more-time",
+    });
+
+    // 2. Periodic drift check when already in sync
+    const evaluation = await engine.checkAndCorrectDrift();
+    expect(evaluation?.action).toBe("NONE");
+
+    // 3. Simulate drift jump (> 1500ms behind)
+    localStatus.positionMs = 10000; // Local lagged behind
+    const driftEval = await engine.checkAndCorrectDrift();
+    expect(driftEval?.action).toBe("SEEK");
+
+    engine.stop();
   });
 });

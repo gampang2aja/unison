@@ -37,6 +37,29 @@ describe("Room Operations & Store", () => {
     expect(members.find((m) => m.role === "listener")?.user_id).toBe(listenerUserId);
   });
 
+  it("should update member device info in store", () => {
+    const room = globalRoomStore.createRoom("Device Test Room", hostUserId);
+    globalRoomStore.addMember(room.id, listenerUserId, "listener");
+
+    globalRoomStore.updateMemberDevice(room.id, listenerUserId, "dev-pixel-9", "Pixel 9 Pro");
+
+    const members = globalRoomStore.getMembers(room.id);
+    const listener = members.find((m) => m.user_id === listenerUserId);
+    expect(listener?.device_id).toBe("dev-pixel-9");
+    expect(listener?.device_name).toBe("Pixel 9 Pro");
+  });
+
+  it("should remove member on leave", () => {
+    const room = globalRoomStore.createRoom("Leave Test Room", hostUserId);
+    globalRoomStore.addMember(room.id, listenerUserId, "listener");
+
+    expect(globalRoomStore.getMembers(room.id)).toHaveLength(2);
+
+    globalRoomStore.removeMember(room.id, listenerUserId);
+    expect(globalRoomStore.getMembers(room.id)).toHaveLength(1);
+    expect(globalRoomStore.getMembers(room.id)[0].user_id).toBe(hostUserId);
+  });
+
   it("should update playback state monotonically", () => {
     const room = globalRoomStore.createRoom("Evening Groove", hostUserId);
 

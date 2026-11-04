@@ -7,6 +7,7 @@ import {
   seekSpotifyPlayback,
   skipSpotifyNext,
   skipSpotifyPrevious,
+  getSpotifyDevices,
   SpotifyPremiumRequiredError,
   SpotifyNoActiveDeviceError,
   SpotifyApiError,
@@ -27,12 +28,28 @@ export async function POST(request: NextRequest) {
   try {
     const accessToken = await getValidAccessToken(session.userId);
 
+    // Resolve target device if not provided
+    let targetDeviceId = deviceId;
+    if (!targetDeviceId) {
+      try {
+        const devices = await getSpotifyDevices(accessToken);
+        const activeDev = devices.find((d) => d.is_active);
+        if (activeDev) {
+          targetDeviceId = activeDev.id;
+        } else if (devices.length > 0) {
+          targetDeviceId = devices[0].id;
+        }
+      } catch (devErr) {
+        console.warn("[Spotify Control] Auto-resolve device warning:", devErr);
+      }
+    }
+
     switch (action) {
       case "play":
         try {
           // Attempt resume without passing uris (passing uris resets song to 00:00)
           await startOrResumeSpotifyPlayback(accessToken, {
-            deviceId,
+            deviceId: targetDeviceId,
             positionMs,
           });
         } catch (playErr) {
@@ -44,7 +61,7 @@ export async function POST(request: NextRequest) {
           ) {
             try {
               await startOrResumeSpotifyPlayback(accessToken, {
-                deviceId,
+                deviceId: targetDeviceId,
                 uris: [trackUri],
                 positionMs,
               });
@@ -78,7 +95,7 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: "Missing trackUri for change_track" }, { status: 400 });
         }
         await startOrResumeSpotifyPlayback(accessToken, {
-          deviceId,
+          deviceId: targetDeviceId,
           uris: [trackUri],
           positionMs: positionMs ?? 0,
         });
@@ -86,7 +103,7 @@ export async function POST(request: NextRequest) {
 
       case "pause":
         try {
-          await pauseSpotifyPlayback(accessToken, deviceId);
+          await pauseSpotifyPlayback(accessToken, targetDeviceId);
         } catch (pauseErr) {
           if (
             pauseErr instanceof SpotifyApiError &&
@@ -104,15 +121,15 @@ export async function POST(request: NextRequest) {
         if (positionMs === undefined) {
           return NextResponse.json({ error: "Missing positionMs for seek" }, { status: 400 });
         }
-        await seekSpotifyPlayback(accessToken, positionMs, deviceId);
+        await seekSpotifyPlayback(accessToken, positionMs, targetDeviceId);
         break;
 
       case "next":
-        await skipSpotifyNext(accessToken, deviceId);
+        await skipSpotifyNext(accessToken, targetDeviceId);
         break;
 
       case "previous":
-        await skipSpotifyPrevious(accessToken, deviceId);
+        await skipSpotifyPrevious(accessToken, targetDeviceId);
         break;
 
       default:

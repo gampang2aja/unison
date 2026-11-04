@@ -5,6 +5,7 @@ import {
   startOrResumeSpotifyPlayback,
   pauseSpotifyPlayback,
   seekSpotifyPlayback,
+  getSpotifyDevices,
   SpotifyPremiumRequiredError,
   SpotifyNoActiveDeviceError,
   SpotifyApiError,
@@ -25,10 +26,26 @@ export async function POST(request: NextRequest) {
   try {
     const accessToken = await getValidAccessToken(session.userId);
 
+    // Resolve target device if not provided
+    let targetDeviceId = deviceId;
+    if (!targetDeviceId) {
+      try {
+        const devices = await getSpotifyDevices(accessToken);
+        const activeDev = devices.find((d) => d.is_active);
+        if (activeDev) {
+          targetDeviceId = activeDev.id;
+        } else if (devices.length > 0) {
+          targetDeviceId = devices[0].id;
+        }
+      } catch (devErr) {
+        console.warn("[Spotify Sync] Auto-resolve device warning:", devErr);
+      }
+    }
+
     switch (action) {
       case "CHANGE_TRACK":
         await startOrResumeSpotifyPlayback(accessToken, {
-          deviceId,
+          deviceId: targetDeviceId,
           uris: trackUri ? [trackUri] : undefined,
           positionMs: positionMs ?? 0,
         });
@@ -36,18 +53,18 @@ export async function POST(request: NextRequest) {
 
       case "PLAY":
         await startOrResumeSpotifyPlayback(accessToken, {
-          deviceId,
+          deviceId: targetDeviceId,
           positionMs,
         });
         break;
 
       case "PAUSE":
-        await pauseSpotifyPlayback(accessToken, deviceId);
+        await pauseSpotifyPlayback(accessToken, targetDeviceId);
         break;
 
       case "SEEK":
         if (positionMs !== undefined) {
-          await seekSpotifyPlayback(accessToken, positionMs, deviceId);
+          await seekSpotifyPlayback(accessToken, positionMs, targetDeviceId);
         }
         break;
 
